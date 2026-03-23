@@ -6,6 +6,9 @@ on:
       - develop
       - main
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   validate:
     name: Validate against QA Org
@@ -14,8 +17,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        env:  
-        FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
       - name: Install Salesforce CLI
         run: npm install --global @salesforce/cli
