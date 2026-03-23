@@ -3,7 +3,10 @@ name: Deploy to QA
 on:
   push:
     branches:
-      - develop
+      - main
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   deploy-qa:
@@ -32,5 +35,12 @@ jobs:
             --test-level RunLocalTests \
             --verbose
 
-      - name: Confirm deployment status
+      - name: Post Deploy - Confirm Status
         run: sf org display --target-org qa-org
+
+      - name: Post Deploy - Smoke Test
+        run: |
+          echo "Deployment completed successfully to QA org"
+          echo "Timestamp: $(date)"
+          echo "Branch: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"

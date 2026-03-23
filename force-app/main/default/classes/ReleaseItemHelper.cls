@@ -13,4 +13,8 @@ public with sharing class ReleaseItemHelper {
     public static Boolean isApproved(String status) {
         return status == 'Approved';
     }
+
+    public static String getReleaseNote(String version) {
+        return 'Release ' + version + ' deployed successfully';
+    }
 }
