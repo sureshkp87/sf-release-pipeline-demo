@@ -5,6 +5,10 @@ on:
     branches:
       - develop
       - main
+       - release/*
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   validate:
@@ -17,12 +21,22 @@ jobs:
 
       - name: Install Salesforce CLI
         run: npm install --global @salesforce/cli
-
+      
       - name: Authenticate QA Org
         run: |
           echo "${{ secrets.SF_AUTH_URL_QA }}" > qa-auth.txt
           sf org login sfdx-url --sfdx-url-file qa-auth.txt --alias qa-org
           rm qa-auth.txt
+
+      - name: Run PMD Static Analysis
+        run: |
+          wget -q https://github.com/pmd/pmd/releases/download/pmd_releases/7.0.0/pmd-dist-7.0.0-bin.zip
+          unzip -q pmd-dist-7.0.0-bin.zip
+          pmd-bin-7.0.0/bin/pmd check \
+            --dir force-app \
+            --rulesets category/apex/bestpractices.xml,category/apex/errorprone.xml \
+            --format text \
+            --minimum-priority 2 || true
 
       - name: Validate deployment (check-only + run tests)
         run: |

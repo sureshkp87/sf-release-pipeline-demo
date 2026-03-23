@@ -1,0 +1,38 @@
+name: Deploy to Dev Org
+
+on:
+  push:
+    branches:
+      - develop
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  deploy-dev:
+    name: Deploy to Dev Org
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Salesforce CLI
+        run: npm install --global @salesforce/cli
+
+      - name: Authenticate Dev Org
+        run: |
+          echo "${{ secrets.SF_AUTH_URL_DEV }}" > dev-auth.txt
+          sf org login sfdx-url --sfdx-url-file dev-auth.txt --alias dev-org
+          rm dev-auth.txt
+
+      - name: Deploy to Dev Org
+        run: |
+          sf project deploy start \
+            --target-org dev-org \
+            --source-dir force-app \
+            --test-level RunLocalTests \
+            --verbose
+
+      - name: Post Deploy - Confirm Status
+        run: sf org display --target-org dev-org
