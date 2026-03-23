@@ -1,0 +1,34 @@
+name: CI Validate on PR
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+
+jobs:
+  validate:
+    name: Validate against QA Org
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Salesforce CLI
+        run: npm install --global @salesforce/cli
+
+      - name: Authenticate QA Org
+        run: |
+          echo "${{ secrets.SF_AUTH_URL_QA }}" > qa-auth.txt
+          sf org login sfdx-url --sfdx-url-file qa-auth.txt --alias qa-org
+          rm qa-auth.txt
+
+      - name: Validate deployment (check-only + run tests)
+        run: |
+          sf project deploy start \
+            --target-org qa-org \
+            --source-dir force-app \
+            --dry-run \
+            --test-level RunLocalTests \
+            --verbose
