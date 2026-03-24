@@ -5,10 +5,11 @@ on:
     branches:
       - develop
       - main
-       - release/*
+      - release/*
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PMD_VERSION: "7.0.0"
 
 jobs:
   validate:
@@ -18,31 +19,144 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cache Node modules
+        uses: actions/cache@v4
+        id: cache-sf-cli
+        with:
+          path: ~/.npm-global
+          key: sf-cli-${{ runner.os }}
 
       - name: Install Salesforce CLI
-        run: npm install --global @salesforce/cli
-      
+        if: steps.cache-sf-cli.outputs.cache-hit != 'true'
+        run: |
+          npm install --global @salesforce/cli
+          echo "$(npm global bin)" >> $GITHUB_PATH
+
+      - name: Add SF CLI to PATH
+        if: steps.cache-sf-cli.outputs.cache-hit == 'true'
+        run: echo "$(npm global bin)" >> $GITHUB_PATH
+
+      - name: Run PMD Static Analysis
+        run: |
+          wget -q https://github.com/pmd/pmd/releases/download/pmd_releases/${{ env.PMD_VERSION }}/pmd-dist-${{ env.PMD_VERSION }}-bin.zip
+          unzip -q pmd-dist-${{ env.PMD_VERSION }}-bin.zip
+          pmd-bin-${{ env.PMD_VERSION }}/bin/pmd check \
+            --dir force-app \
+            --rulesets category/apex/bestpractices.xml,category/apex/errorprone.xml \
+            --format text \
+            --minimum-priority 2 \
+          && echo "PMD passed" || echo "PMD warnings found - review recommended"
+
       - name: Authenticate QA Org
         run: |
           echo "${{ secrets.SF_AUTH_URL_QA }}" > qa-auth.txt
           sf org login sfdx-url --sfdx-url-file qa-auth.txt --alias qa-org
           rm qa-auth.txt
 
-      - name: Run PMD Static Analysis
+      - name: Get changed files
+        id: changed-files
         run: |
-          wget -q https://github.com/pmd/pmd/releases/download/pmd_releases/7.0.0/pmd-dist-7.0.0-bin.zip
-          unzip -q pmd-dist-7.0.0-bin.zip
-          pmd-bin-7.0.0/bin/pmd check \
-            --dir force-app \
-            --rulesets category/apex/bestpractices.xml,category/apex/errorprone.xml \
-            --format text \
-            --minimum-priority 2 || true
+          echo "Getting changed files between base and head..."
+          git diff --name-only origin/${{ github.base_ref }}...HEAD > changed_files.txt
+          cat changed_files.txt
+          echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+          cat changed_files.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Validate deployment (check-only + run tests)
+      - name: Generate delta package
+        run: |
+          echo '<?xml version="1.0" encoding="UTF-8"?>' > delta-package.xml
+          echo '<Package xmlns="http://soap.sforce.com/2006/04/metadata">' >> delta-package.xml
+          echo '    <version>59.0</version>' >> delta-package.xml
+
+          HAS_APEX=false
+          HAS_FIELDS=false
+          HAS_OBJECTS=false
+          HAS_PERMSETS=false
+          HAS_LWC=false
+
+          while IFS= read -r file; do
+            if [[ $file == force-app/main/default/classes/*.cls && $file != *-meta.xml ]]; then
+              HAS_APEX=true
+            fi
+            if [[ $file == force-app/main/default/objects/*/fields/*.field-meta.xml ]]; then
+              HAS_FIELDS=true
+              FIELD=$(basename "$file" .field-meta.xml)
+              OBJECT=$(echo "$file" | awk -F'/' '{print $6}')
+            fi
+            if [[ $file == force-app/main/default/objects/*/*.object-meta.xml ]]; then
+              HAS_OBJECTS=true
+            fi
+            if [[ $file == force-app/main/default/permissionsets/*.permissionset-meta.xml ]]; then
+              HAS_PERMSETS=true
+              PERMSET=$(basename "$file" .permissionset-meta.xml)
+            fi
+            if [[ $file == force-app/main/default/lwc/* ]]; then
+              HAS_LWC=true
+            fi
+          done < changed_files.txt
+
+          if [ "$HAS_APEX" = true ]; then
+            echo '    <types>' >> delta-package.xml
+            while IFS= read -r file; do
+              if [[ $file == force-app/main/default/classes/*.cls && $file != *-meta.xml ]]; then
+                CLASS=$(basename "$file" .cls)
+                echo "        <members>$CLASS</members>" >> delta-package.xml
+              fi
+            done < changed_files.txt
+            echo '        <name>ApexClass</name>' >> delta-package.xml
+            echo '    </types>' >> delta-package.xml
+          fi
+
+          if [ "$HAS_FIELDS" = true ]; then
+            echo '    <types>' >> delta-package.xml
+            while IFS= read -r file; do
+              if [[ $file == force-app/main/default/objects/*/fields/*.field-meta.xml ]]; then
+                FIELD=$(basename "$file" .field-meta.xml)
+                OBJECT=$(echo "$file" | awk -F'/' '{print $6}')
+                echo "        <members>$OBJECT.$FIELD</members>" >> delta-package.xml
+              fi
+            done < changed_files.txt
+            echo '        <name>CustomField</name>' >> delta-package.xml
+            echo '    </types>' >> delta-package.xml
+          fi
+
+          if [ "$HAS_PERMSETS" = true ]; then
+            echo '    <types>' >> delta-package.xml
+            while IFS= read -r file; do
+              if [[ $file == force-app/main/default/permissionsets/*.permissionset-meta.xml ]]; then
+                PERMSET=$(basename "$file" .permissionset-meta.xml)
+                echo "        <members>$PERMSET</members>" >> delta-package.xml
+              fi
+            done < changed_files.txt
+            echo '        <name>PermissionSet</name>' >> delta-package.xml
+            echo '    </types>' >> delta-package.xml
+          fi
+
+          if [ "$HAS_LWC" = true ]; then
+            echo '    <types>' >> delta-package.xml
+            while IFS= read -r file; do
+              if [[ $file == force-app/main/default/lwc/*/  ]]; then
+                LWC=$(echo "$file" | awk -F'/' '{print $6}')
+                echo "        <members>$LWC</members>" >> delta-package.xml
+              fi
+            done < changed_files.txt
+            echo '        <name>LightningComponentBundle</name>' >> delta-package.xml
+            echo '    </types>' >> delta-package.xml
+          fi
+
+          echo '</Package>' >> delta-package.xml
+          echo "Generated delta-package.xml:"
+          cat delta-package.xml
+
+      - name: Validate delta deployment (check-only)
         run: |
           sf project deploy start \
             --target-org qa-org \
-            --source-dir force-app \
+            --manifest delta-package.xml \
             --dry-run \
             --test-level RunLocalTests \
             --verbose
