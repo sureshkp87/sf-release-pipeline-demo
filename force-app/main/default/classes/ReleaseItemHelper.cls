@@ -5,6 +5,8 @@ public with sharing class ReleaseItemHelper {
             return 'Ready for deployment';
         } else if (status == 'In Progress') {
             return 'Deployment running';
+        } else if (status == 'Failed') {
+            return 'Deployment failed - rollback initiated';
         } else {
             return 'Pending review';
         }
