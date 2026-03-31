@@ -8,7 +8,7 @@ public with sharing class ReleaseItemHelper {
         } else if (status == 'Failed') {
             return 'Deployment failed - rollback initiated';
         } else {
-            return 'Pending review';
+            return 'Pending review'; // test comment 1
         }
     }
 
