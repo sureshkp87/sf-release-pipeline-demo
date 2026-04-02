@@ -18,5 +18,6 @@ public with sharing class ReleaseItemHelper {
 
     public static String getReleaseNote(String version) {
         return 'Release ' + version + ' deployed successfully';
+        // Demo prepartion update showcase
     }
 }
