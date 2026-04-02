@@ -8,7 +8,7 @@ public with sharing class ReleaseItemHelper {
         } else if (status == 'Failed') {
             return 'Deployment failed - rollback initiated';
         } else {
-            return 'Pending review'; // test comment 1
+            return 'Pending review';
         }
     }
 
@@ -18,5 +18,6 @@ public with sharing class ReleaseItemHelper {
 
     public static String getReleaseNote(String version) {
         return 'Release ' + version + ' deployed successfully';
+        // Demo prepartion update showcase
     }
 }
